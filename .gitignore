@@ -1,0 +1,9 @@
+# Секреты — НИКОГДА не коммитим
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
