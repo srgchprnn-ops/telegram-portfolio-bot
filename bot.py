@@ -104,7 +104,7 @@ dp = Dispatcher()
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
-        f"Привет! 👋 Я бот-визитка <b>{OWNER_NAME}</b>.\n\n"
+        "Привет! 👋 Я бот-визитка)\n\n"
         "Делаю Telegram-ботов, парсеры и лендинги.",
         reply_markup=start_kb(),
     )
