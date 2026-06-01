@@ -24,7 +24,9 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     Message,
+    ReplyKeyboardMarkup,
 )
 
 try:
@@ -62,6 +64,15 @@ class Lead(StatesGroup):
     waiting_contact = State()
 
 
+def start_kb() -> ReplyKeyboardMarkup:
+    """Постоянная нижняя кнопка «Старт» — всегда под рукой."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="▶️ Старт")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
 def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -89,14 +100,15 @@ dp = Dispatcher()
 
 
 @dp.message(CommandStart())
+@dp.message(F.text == "▶️ Старт")
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         f"Привет! 👋 Я бот-визитка <b>{OWNER_NAME}</b>.\n\n"
-        "Делаю Telegram-ботов, парсеры и лендинги.\n"
-        "Можешь сразу оставить заявку или посмотреть разделы 👇",
-        reply_markup=main_menu(),
+        "Делаю Telegram-ботов, парсеры и лендинги.",
+        reply_markup=start_kb(),
     )
+    await message.answer("Выберите раздел 👇", reply_markup=main_menu())
 
 
 @dp.message(Command("help"))
