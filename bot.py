@@ -5,7 +5,6 @@ Telegram-бот-визитка фрилансера с приёмом заяво
 - /start  — приветствие и главное меню (инлайн-кнопки)
 - Услуги, Контакты, «О боте» — навигация по разделам
 - 📝 Оставить заявку — клиент описывает задачу и контакт, заявка приходит владельцу в личку
-- 🔤 Перевёртыш — небольшой интерактивный инструмент (демонстрация FSM)
 - /id — узнать свой Telegram chat_id (нужно для настройки ADMIN_ID)
 
 Стек: aiogram 3.x. Токен — из BOT_TOKEN, владелец заявок — из ADMIN_ID.
@@ -56,10 +55,6 @@ TELEGRAM = "@srgchprnn"
 EMAIL = "srg.chprnn@mail.ru"
 
 
-class Tools(StatesGroup):
-    waiting_text = State()
-
-
 class Lead(StatesGroup):
     """Состояния сбора заявки."""
 
@@ -72,7 +67,6 @@ def main_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="📝 Оставить заявку", callback_data="lead")],
             [InlineKeyboardButton(text="🧩 Услуги", callback_data="services")],
-            [InlineKeyboardButton(text="🔤 Перевёртыш (демо)", callback_data="tool")],
             [InlineKeyboardButton(text="📫 Контакты", callback_data="contacts")],
             [InlineKeyboardButton(text="🤖 О боте", callback_data="about")],
         ]
@@ -230,28 +224,6 @@ async def cb_about(callback: CallbackQuery) -> None:
     )
     await callback.message.edit_text(text, reply_markup=back_menu())
     await callback.answer()
-
-
-@dp.callback_query(F.data == "tool")
-async def cb_tool(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(Tools.waiting_text)
-    await callback.message.edit_text(
-        "🔤 <b>Перевёртыш</b>\n\n"
-        "Пришли любой текст — я переверну его задом наперёд "
-        "и посчитаю количество символов.",
-        reply_markup=back_menu(),
-    )
-    await callback.answer()
-
-
-@dp.message(StateFilter(Tools.waiting_text), F.text)
-async def tool_process(message: Message, state: FSMContext) -> None:
-    source = message.text
-    await message.answer(
-        f"🔁 <b>Перевёрнуто:</b>\n{source[::-1]}\n\n"
-        f"📏 Символов: <b>{len(source)}</b>",
-        reply_markup=back_menu(),
-    )
 
 
 @dp.message()
