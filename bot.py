@@ -1,12 +1,14 @@
 """
-Telegram-бот-визитка фрилансера.
+Telegram-бот-визитка фрилансера с приёмом заявок.
 
 Возможности:
 - /start  — приветствие и главное меню (инлайн-кнопки)
 - Услуги, Контакты, «О боте» — навигация по разделам
+- 📝 Оставить заявку — клиент описывает задачу и контакт, заявка приходит владельцу в личку
 - 🔤 Перевёртыш — небольшой интерактивный инструмент (демонстрация FSM)
+- /id — узнать свой Telegram chat_id (нужно для настройки ADMIN_ID)
 
-Стек: aiogram 3.x. Токен берётся из переменной окружения BOT_TOKEN.
+Стек: aiogram 3.x. Токен — из BOT_TOKEN, владелец заявок — из ADMIN_ID.
 """
 
 import asyncio
@@ -26,7 +28,6 @@ from aiogram.types import (
     Message,
 )
 
-# Грузим .env при локальном запуске (на сервере переменные задаёт systemd).
 try:
     from dotenv import load_dotenv
 
@@ -46,22 +47,30 @@ if not BOT_TOKEN:
         "Не задан BOT_TOKEN. Укажите его в переменной окружения или в файле .env"
     )
 
-# --- Контактные данные (правится в одном месте) ---
+# ID владельца (куда слать заявки). Если 0 — заявки только логируются.
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+# --- Контактные данные ---
 OWNER_NAME = "Сергей"
 TELEGRAM = "@srgchprnn"
 EMAIL = "srg.chprnn@mail.ru"
 
 
 class Tools(StatesGroup):
-    """Состояния мини-инструмента «Перевёртыш»."""
-
     waiting_text = State()
 
 
+class Lead(StatesGroup):
+    """Состояния сбора заявки."""
+
+    waiting_task = State()
+    waiting_contact = State()
+
+
 def main_menu() -> InlineKeyboardMarkup:
-    """Главное меню бота."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Оставить заявку", callback_data="lead")],
             [InlineKeyboardButton(text="🧩 Услуги", callback_data="services")],
             [InlineKeyboardButton(text="🔤 Перевёртыш (демо)", callback_data="tool")],
             [InlineKeyboardButton(text="📫 Контакты", callback_data="contacts")],
@@ -71,11 +80,14 @@ def main_menu() -> InlineKeyboardMarkup:
 
 
 def back_menu() -> InlineKeyboardMarkup:
-    """Кнопка «назад» в главное меню."""
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]]
+    )
+
+
+def cancel_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="✖️ Отмена", callback_data="menu")]]
     )
 
 
@@ -88,7 +100,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await message.answer(
         f"Привет! 👋 Я бот-визитка <b>{OWNER_NAME}</b>.\n\n"
         "Делаю Telegram-ботов, парсеры и лендинги.\n"
-        "Выбери раздел в меню ниже 👇",
+        "Можешь сразу оставить заявку или посмотреть разделы 👇",
         reply_markup=main_menu(),
     )
 
@@ -96,12 +108,23 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 @dp.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.answer(
-        "Команды:\n"
-        "/start — главное меню\n"
-        "/help — эта справка\n\n"
-        "Или просто пользуйся кнопками 🙂",
+        "Команды:\n/start — меню\n/help — справка\n/id — узнать свой chat_id",
         reply_markup=main_menu(),
     )
+
+
+@dp.message(Command("id"))
+async def cmd_id(message: Message) -> None:
+    await message.answer(
+        f"Ваш chat_id: <code>{message.chat.id}</code>\n"
+        "Этот номер используется для настройки получателя заявок (ADMIN_ID)."
+    )
+
+
+@dp.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Отменено. Возвращаю в меню 👇", reply_markup=main_menu())
 
 
 @dp.callback_query(F.data == "menu")
@@ -109,6 +132,65 @@ async def cb_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("Главное меню 👇", reply_markup=main_menu())
     await callback.answer()
+
+
+# ===== Приём заявки =====
+@dp.callback_query(F.data == "lead")
+async def cb_lead(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(Lead.waiting_task)
+    await callback.message.edit_text(
+        "📝 <b>Оставить заявку</b>\n\n"
+        "Опишите кратко вашу задачу — что нужно сделать?\n"
+        "<i>(например: бот для приёма заказов, парсер каталога, лендинг для услуги)</i>",
+        reply_markup=cancel_menu(),
+    )
+    await callback.answer()
+
+
+@dp.message(StateFilter(Lead.waiting_task), F.text)
+async def lead_task(message: Message, state: FSMContext) -> None:
+    await state.update_data(task=message.text)
+    await state.set_state(Lead.waiting_contact)
+    await message.answer(
+        "Принял! 👍\n\nКак с вами связаться? Оставьте контакт — "
+        "телефон, @username или email.",
+        reply_markup=cancel_menu(),
+    )
+
+
+@dp.message(StateFilter(Lead.waiting_contact), F.text)
+async def lead_contact(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    task = data.get("task", "—")
+    contact = message.text
+    user = message.from_user
+    username = f"@{user.username}" if user.username else "—"
+
+    lead_text = (
+        "🔔 <b>Новая заявка!</b>\n\n"
+        f"<b>Задача:</b> {task}\n"
+        f"<b>Контакт:</b> {contact}\n"
+        f"<b>От:</b> {user.full_name} ({username}, id <code>{user.id}</code>)"
+    )
+
+    delivered = False
+    if ADMIN_ID:
+        try:
+            await message.bot.send_message(ADMIN_ID, lead_text)
+            delivered = True
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Не удалось отправить заявку владельцу: %s", exc)
+    else:
+        logger.warning("ADMIN_ID не задан — заявка не отправлена: %s", lead_text)
+
+    if not delivered:
+        logger.info("ЗАЯВКА: %s", lead_text)
+
+    await state.clear()
+    await message.answer(
+        "Спасибо! 🙌 Заявка принята — я свяжусь с вами в ближайшее время.",
+        reply_markup=back_menu(),
+    )
 
 
 @dp.callback_query(F.data == "services")
@@ -165,9 +247,8 @@ async def cb_tool(callback: CallbackQuery, state: FSMContext) -> None:
 @dp.message(StateFilter(Tools.waiting_text), F.text)
 async def tool_process(message: Message, state: FSMContext) -> None:
     source = message.text
-    reversed_text = source[::-1]
     await message.answer(
-        f"🔁 <b>Перевёрнуто:</b>\n{reversed_text}\n\n"
+        f"🔁 <b>Перевёрнуто:</b>\n{source[::-1]}\n\n"
         f"📏 Символов: <b>{len(source)}</b>",
         reply_markup=back_menu(),
     )
@@ -175,19 +256,14 @@ async def tool_process(message: Message, state: FSMContext) -> None:
 
 @dp.message()
 async def fallback(message: Message) -> None:
-    """Любое сообщение вне сценария — возвращаем в меню."""
     await message.answer(
         "Не совсем понял 🤔 Воспользуйся меню 👇", reply_markup=main_menu()
     )
 
 
 async def main() -> None:
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    logger.info("Бот запускается...")
-    # Сбрасываем накопившиеся апдейты и стартуем long polling.
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    logger.info("Бот запускается... ADMIN_ID=%s", ADMIN_ID or "не задан")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
